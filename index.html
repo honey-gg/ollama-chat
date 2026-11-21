@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="data:,">
+<title>本地 Qwen 对话 · 实时速度监控</title>
+<style>
+  :root{
+    --bg:#1B1B1A; --panel:#232322; --panel2:#2C2C2A;
+    --line:rgba(255,255,255,.10); --line2:rgba(255,255,255,.18);
+    --text:#E8E6E1; --muted:#9C9A94; --dim:#6E6C67;
+    --accent:#97C459; --accent2:#85B7EB; --warn:#EF9F27; --danger:#E24B4A;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg); color:var(--text);
+    font:14px/1.6 -apple-system,BlinkMacSystemFont,"SF Pro SC","PingFang SC",system-ui,sans-serif;
+    display:flex; flex-direction:column; overflow:hidden}
+  header{display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    padding:9px 16px; border-bottom:1px solid var(--line); background:var(--panel)}
+  header .brand{font-weight:500; font-size:13px; letter-spacing:.02em}
+  header .brand span{color:var(--dim); font-weight:400}
+  select,input[type=number],input[type=text],textarea{
+    background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:7px; padding:5px 8px; font-size:12px; font-family:inherit}
+  select:focus,input:focus,textarea:focus{outline:none; border-color:var(--accent2)}
+  label.chk{display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted);
+    cursor:pointer; user-select:none; white-space:nowrap}
+  label.chk input{accent-color:var(--accent)}
+  .spacer{flex:1}
+  button{background:transparent; color:var(--text); border:1px solid var(--line2);
+    border-radius:7px; padding:5px 11px; font-size:12px; font-family:inherit; cursor:pointer}
+  button:hover{border-color:var(--muted)}
+  button.primary{background:var(--accent); border-color:var(--accent); color:#1B1B1A; font-weight:500}
+  button.primary:hover{filter:brightness(1.08)}
+  button.danger{color:var(--danger); border-color:rgba(226,75,74,.45)}
+  button.tiny{padding:3px 8px; font-size:11px}
+  button:disabled{opacity:.4; cursor:default}
+  .chip{font-size:11.5px; color:var(--muted); background:var(--panel2); border:1px solid var(--line);
+    border-radius:6px; padding:4px 9px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; white-space:nowrap}
+
+  .app{flex:1; display:flex; min-height:0}
+  main{flex:1; display:flex; flex-direction:column; min-width:0}
+  #chat{flex:1; overflow-y:auto; padding:20px 22px; display:flex; flex-direction:column; gap:16px}
+  .msg{max-width:min(820px,88%); display:flex; flex-direction:column; gap:5px}
+  .msg.user{align-self:flex-end; align-items:flex-end}
+  .msg.assistant{align-self:flex-start}
+  .who{font-size:11px; color:var(--dim); letter-spacing:.03em}
+  .bubble{padding:11px 15px; border-radius:12px; border:1px solid var(--line);
+    background:var(--panel); word-break:break-word}
+  .msg.user .bubble{background:#26333F; border-color:rgba(133,183,235,.28)}
+  .bubble p{margin:0 0 9px} .bubble p:last-child{margin-bottom:0}
+  .bubble pre{background:#141413; border:1px solid var(--line); border-radius:9px;
+    padding:11px 13px; overflow-x:auto; margin:9px 0; font-size:12.5px; line-height:1.55}
+  .bubble code{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace; font-size:12.5px}
+  .bubble :not(pre) > code{background:var(--panel2); padding:1.5px 5px; border-radius:4px}
+  .thinkbox{font-size:12px; color:var(--dim); border-left:2px solid var(--line2);
+    padding:3px 0 3px 11px; margin-bottom:9px; white-space:pre-wrap; max-height:150px; overflow-y:auto}
+  .thinkbox b{color:var(--muted); font-weight:500; display:block; margin-bottom:3px}
+  .caret{display:inline-block; width:7px; height:15px; background:var(--accent);
+    vertical-align:-2px; animation:blink 1s steps(2) infinite}
+  @keyframes blink{50%{opacity:0}}
+  .err{color:var(--danger); font-size:13px}
+  .hint{color:var(--dim); font-size:11.5px; line-height:1.5}
+
+  .composer{border-top:1px solid var(--line); background:var(--panel); padding:12px 16px}
+  .composer .row{display:flex; gap:10px; align-items:flex-end}
+  textarea#input{flex:1; resize:none; background:var(--panel2); color:var(--text);
+    border:1px solid var(--line); border-radius:10px; padding:10px 13px;
+    font:inherit; font-size:13.5px; min-height:44px; max-height:180px; line-height:1.55}
+  .composer .meta{margin-top:7px; font-size:11.5px; color:var(--dim)}
+
+  aside{width:292px; flex:0 0 292px; border-left:1px solid var(--line); background:var(--panel);
+    display:flex; flex-direction:column; min-height:0}
+  .tabs{display:flex; gap:4px; padding:9px 12px; border-bottom:1px solid var(--line); flex:0 0 auto}
+  .tab{flex:1; padding:5px 0; text-align:center; font-size:12px; color:var(--muted);
+    background:transparent; border:1px solid transparent; border-radius:7px; cursor:pointer}
+  .tab:hover{color:var(--text)}
+  .tab.on{background:var(--panel2); border-color:var(--line); color:var(--text); font-weight:500}
+  .tabpane{flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:12px}
+  .tabpane[hidden]{display:none}
+
+  .ratecard{background:var(--panel2); border-radius:11px; padding:12px 13px 13px; border:1px solid var(--line)}
+  .ratecard .lab{font-size:11.5px; color:var(--muted); letter-spacing:.03em}
+  .ratecard .big{font-size:42px; font-weight:500; line-height:1.05; color:var(--accent);
+    font-variant-numeric:tabular-nums; letter-spacing:-.02em; margin:2px 0 0}
+  .ratecard .big .u{font-size:13px; color:var(--muted); font-weight:400; margin-left:3px}
+  .ratecard .sub{font-size:11px; color:var(--dim); margin-top:3px; min-height:14px}
+  #spark{width:100%; height:58px; display:block; margin-top:8px}
+
+  .stats{display:flex; flex-direction:column; gap:1px; background:var(--line);
+    border-radius:10px; overflow:hidden}
+  .stat{display:flex; justify-content:space-between; gap:10px; padding:8px 11px;
+    background:var(--panel2); font-size:12px}
+  .stat .k{color:var(--muted)} .stat .v{font-variant-numeric:tabular-nums; color:var(--text)}
+  .stat .v.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .v.good{color:var(--accent)} .v.blue{color:var(--accent2)} .v.warn{color:var(--warn)}
+  .sect{font-size:11px; color:var(--dim); letter-spacing:.06em; margin:2px 0 -6px}
+
+  .grp{display:flex; flex-direction:column; gap:2px}
+  .grpHd{display:flex; align-items:center; justify-content:space-between; gap:8px;
+    font-size:11px; color:var(--dim); letter-spacing:.06em;
+    padding:0 2px 6px; border-bottom:1px solid var(--line); margin-bottom:8px}
+  .opt{padding:7px 0 8px; border-bottom:1px solid rgba(255,255,255,.05)}
+  .opt:last-child{border-bottom:none}
+  .optRow{display:flex; align-items:center; gap:8px}
+  .optName{flex:1; font-size:12px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .optNum{width:76px; text-align:right; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:12px; padding:3px 6px}
+  .optNum::placeholder{color:var(--dim)}
+  .optRange{width:100%; margin:6px 0 0; accent-color:var(--accent); height:14px}
+  .optHint{font-size:10.5px; color:var(--dim); margin-top:4px; line-height:1.45}
+  .optHint.badhint{color:var(--danger)}
+  .opt.unset .optName{color:var(--muted)}
+  .opt.unset .optRange{opacity:.32; pointer-events:none}
+  .boolRow{display:flex; align-items:center; gap:8px; padding:7px 0;
+    border-bottom:1px solid rgba(255,255,255,.05)}
+  .boolRow:last-child{border-bottom:none}
+  .boolRow label{flex:1; font-size:12px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace; cursor:pointer}
+  .boolRow input{accent-color:var(--accent)}
+  .minfo{background:var(--panel2); border:1px solid var(--line); border-radius:9px;
+    padding:9px 11px; font-size:11px; color:var(--muted); line-height:1.7}
+  .minfo .r{display:grid; grid-template-columns:auto minmax(0,1fr); gap:8px}
+  .minfo .r span:first-child{white-space:nowrap}
+  .minfo .r span:last-child{text-align:right; color:var(--text); overflow-wrap:anywhere;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .btnrow{display:flex; gap:6px; flex-wrap:wrap}
+  .ctxwarn{font-size:10.5px; line-height:1.5; border-radius:8px; padding:7px 9px;
+    margin:0 0 8px; color:var(--muted); background:var(--panel2);
+    border:1px solid var(--line)}
+  .ctxwarn.risky{color:var(--warn); background:rgba(239,159,39,.09);
+    border-color:rgba(239,159,39,.32)}
+  .ctxwarn.bad{color:var(--danger); background:rgba(226,75,74,.10);
+    border-color:rgba(226,75,74,.38)}
+  .fixbtn{display:block; margin-top:9px}
+
+  @media (max-width:900px){
+    .app{flex-direction:column}
+    aside{width:100%; flex:0 0 auto; border-left:none; border-top:1px solid var(--line); max-height:62vh}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">本地 Qwen <span>· 实时速度监控</span></div>
+  <select id="model" title="模型"></select>
+  <label class="chk"><input type="checkbox" id="think"> 思考</label>
+  <span class="chip" id="chip">—</span>
+  <div class="spacer"></div>
+  <button id="btnParams">参数面板</button>
+  <button id="clear">清空对话</button>
+</header>
+
+<div class="app">
+  <main>
+    <div id="chat"></div>
+    <div class="composer">
+      <div class="row">
+        <textarea id="input" placeholder="和本地 Qwen 说话…&#10;Enter 发送 · Shift+Enter 换行"></textarea>
+        <button class="primary" id="send">发送</button>
+        <button class="danger" id="stop" disabled>停止</button>
+      </div>
+      <div class="meta" id="composerMeta">就绪</div>
+    </div>
+  </main>
+
+  <aside>
+    <div class="tabs">
+      <button class="tab on" data-tab="mon">监控</button>
+      <button class="tab" data-tab="opt">参数</button>
+    </div>
+
+    <div class="tabpane" id="paneMon">
+      <div class="ratecard">
+        <div class="lab">实时生成速度</div>
+        <div class="big" id="liveRate">–<span class="u">tok/s</span></div>
+        <div class="sub" id="liveSub">等待生成</div>
+        <canvas id="spark"></canvas>
+      </div>
+
+      <div class="sect">本轮</div>
+      <div class="stats">
+        <div class="stat"><span class="k">首字延迟</span><span class="v mono" id="sTtft">–</span></div>
+        <div class="stat"><span class="k">预填充</span><span class="v mono blue" id="sPre">–</span></div>
+        <div class="stat"><span class="k">前缀缓存</span><span class="v mono blue" id="sCache">–</span></div>
+        <div class="stat"><span class="k">输出 token</span><span class="v mono" id="sOut">–</span></div>
+        <div class="stat"><span class="k">本轮实测</span><span class="v mono good" id="sFinal">–</span></div>
+        <div class="stat"><span class="k">模型加载</span><span class="v mono" id="sLoad">–</span></div>
+        <div class="stat"><span class="k">总耗时</span><span class="v mono" id="sTotal">–</span></div>
+      </div>
+
+      <div class="sect">会话</div>
+      <div class="stats">
+        <div class="stat"><span class="k">平均速度</span><span class="v mono" id="sAvg">–</span></div>
+        <div class="stat"><span class="k">峰值</span><span class="v mono" id="sPeak">–</span></div>
+        <div class="stat"><span class="k">累计 token</span><span class="v mono" id="sCum">0</span></div>
+      </div>
+
+      <div class="sect">运行位置</div>
+      <div class="stats">
+        <div class="stat"><span class="k">计算设备</span><span class="v" id="sDev">–</span></div>
+      </div>
+      <div class="hint" id="devHint"></div>
+      <div class="hint" id="panelHint"></div>
+    </div>
+
+    <div class="tabpane" id="paneOpt" hidden>
+      <div class="minfo" id="modelInfo">读取模型信息…</div>
+
+      <div class="btnrow">
+        <button class="tiny" id="btnLoadDef">载入模型默认</button>
+        <button class="tiny" id="btnClearDef">全部清空</button>
+        <button class="tiny" id="btnSavePreset">存为预设</button>
+      </div>
+      <div class="hint" id="optHint">留空 = 不发送该参数，由引擎按模型默认值处理。改动立即生效。</div>
+
+      <div class="grp">
+        <div class="grpHd"><span>长度与停止</span></div>
+        <div class="optRow" style="margin-bottom:8px">
+          <span class="optName">num_ctx</span>
+          <select id="ctx" style="width:98px">
+            <option value="2048">2K</option><option value="4096">4K</option>
+            <option value="8192">8K</option><option value="16384">16K</option>
+            <option value="32768">32K</option><option value="65536">64K</option>
+            <option value="98304">96K</option><option value="131072">128K ⚠</option>
+            <option value="custom">自定义…</option>
+          </select>
+        </div>
+        <div class="optRow" id="ctxCustomRow" hidden style="margin:-4px 0 8px">
+          <span class="optName">自定义值</span>
+          <input type="number" id="ctxCustom" min="512" max="262144" step="1024" placeholder="例如 98304" style="width:98px">
+        </div>
+        <div class="optHint" style="margin:-4px 0 6px">可填 512–262144 之间的<b>任意整数</b>，不限于预设。
+          <b style="color:var(--warn)">改这里会触发模型重载</b>，期间不产出 token。</div>
+        <div class="ctxwarn" id="ctxWarn" hidden></div>
+        <div class="optRow" style="margin-bottom:8px">
+          <span class="optName">num_predict</span>
+          <select id="maxTok" style="width:98px">
+            <option value="256">256</option><option value="512">512</option>
+            <option value="1024">1024</option><option value="2048">2048</option>
+            <option value="4096">4096</option><option value="8192">8192</option>
+            <option value="16384">16384</option><option value="-1">不限</option>
+          </select>
+        </div>
+        <div class="optHint" style="margin:-4px 0 8px">单次最多生成多少 token。-1 为不限制。</div>
+        <div class="optRow"><span class="optName">stop</span></div>
+        <textarea id="stopSeq" rows="2" style="width:100%; margin-top:5px; font-family:ui-monospace,Menlo,monospace; font-size:11.5px" placeholder="停止串，一行一个（留空不发送）"></textarea>
+      </div>
+
+      <div id="grpGen"></div>
+
+      <div class="grp">
+        <div class="grpHd"><span>其他</span></div>
+        <div class="optRow">
+          <span class="optName">format</span>
+          <select id="fmtMode" style="width:120px">
+            <option value="off">关闭</option>
+            <option value="object">JSON 对象</option>
+            <option value="array">JSON 数组</option>
+            <option value="custom">自定义 Schema</option>
+          </select>
+        </div>
+        <textarea id="fmtSchema" rows="3" hidden style="width:100%; margin-top:6px; font-family:ui-monospace,Menlo,monospace; font-size:11px" placeholder='{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}'></textarea>
+        <div class="optHint" id="fmtHint"></div>
+        <div class="optRow" style="margin-top:8px">
+          <span class="optName">keep_alive</span>
+          <select id="keepAlive" style="width:110px">
+            <option value="5m">5 分钟</option>
+            <option value="30m">30 分钟</option>
+            <option value="1h">1 小时</option>
+            <option value="-1">常驻不卸载</option>
+          </select>
+        </div>
+        <div class="optHint" style="margin-top:5px">生成后模型在内存里保留多久。选「常驻」会一直占着约 22GB 内存。</div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<script>
+'use strict';
+const API = 'http://127.0.0.1:11434';
+const $ = id => document.getElementById(id);
+const LS_KEY = 'ollama-chat-params-v1';
+
+/* ── 可调参数清单（数值型；留空 = 不发送）────────────────── */
+const SPEC = [
+  { g:'采样', k:'temperature',       min:0,  max:2,          step:0.01,  dec:2, hint:'越高越随机。代码建议 0.2–0.4，聊天 0.7，创意写作 0.9+' },
+  { g:'采样', k:'top_k',             min:0,  max:200,        step:1,     dec:0, hint:'只保留概率最高的 K 个候选。0 = 关闭，仅用 top_p。代码常设 20' },
+  { g:'采样', k:'top_p',             min:0,  max:1,          step:0.01,  dec:2, hint:'核采样：累计概率到 P 就截断。0.8–0.95 常见' },
+  { g:'采样', k:'min_p',             min:0,  max:1,          step:0.005, dec:3, hint:'相对阈值，比 top_p 更稳，分布平坦时不会放进垃圾 token。0.02–0.05 起步' },
+  { g:'采样', k:'typical_p',         min:0,  max:1,          step:0.01,  dec:2, hint:'局部典型采样。1.0 = 关闭' },
+  { g:'采样', k:'seed',              min:-1, max:2147483647, step:1,     dec:0, hint:'-1 = 每次随机。固定一个值可以复现同一输出' },
+  { g:'惩罚', k:'repeat_penalty',    min:0,  max:2,          step:0.01,  dec:2, hint:'1.0 = 关闭。大于 1 抑制重复，调太高输出会变生硬' },
+  { g:'惩罚', k:'repeat_last_n',     min:-1, max:8192,       step:1,     dec:0, hint:'回看多少 token 做去重。-1 = 按 ctx 长度，0 = 关闭' },
+  { g:'惩罚', k:'presence_penalty',  min:0,  max:2,          step:0.01,  dec:2, hint:'只要出现过就扣分，不论次数' },
+  { g:'惩罚', k:'frequency_penalty', min:0,  max:2,          step:0.01,  dec:2, hint:'按出现次数累积扣分' },
+  { g:'性能', k:'num_gpu',           min:0,  max:999,        step:1,     dec:0, hint:'放到 GPU 的层数。999 = 全部。0 = 全 CPU，会极慢，别在这台机器上试' },
+  { g:'性能', k:'num_thread',        min:0,  max:32,         step:1,     dec:0, hint:'CPU 线程数。0 = 自动，一般别动' },
+  { g:'性能', k:'num_batch',         min:1,  max:4096,       step:1,     dec:0, hint:'批大小。调小可降低 prefill 内存尖峰，代价是更慢' },
+  { g:'性能', k:'num_keep',          min:-1, max:2048,       step:1,     dec:0, hint:'从提示词开头固定保留的 token 数' },
+  { g:'性能', k:'mirostat',          min:0,  max:2,          step:1,     dec:0, hint:'0=关，1=v1，2=v2。开启后 top_k / top_p / min_p 全部失效' },
+  { g:'性能', k:'mirostat_tau',      min:0,  max:10,         step:0.1,   dec:2, hint:'Mirostat 目标困惑度，5.0 常见' },
+  { g:'性能', k:'mirostat_eta',      min:0,  max:1,          step:0.01,  dec:2, hint:'Mirostat 学习率，0.1 常见' },
+];
+const BOOLS = [
+  { k:'use_mmap',         label:'use_mmap（内存映射加载，省内存）', def:true },
+  { k:'penalize_newline', label:'penalize_newline（惩罚换行，一般关）', def:false },
+];
+
+/* ── 构建面板 ───────────────────────────────────────────── */
+(function buildPanel(){
+  const grpGen = $('grpGen');
+  const groups = [];
+  SPEC.forEach(o => { if (!groups.includes(o.g)) groups.push(o.g); });
+  groups.forEach(g => {
+    const wrap = document.createElement('div');
+    wrap.className = 'grp';
+    wrap.innerHTML = '<div class="grpHd"><span>' + g + '</span></div>';
+    SPEC.filter(o => o.g === g).forEach(o => {
+      const row = document.createElement('div');
+      row.className = 'opt unset';
+      row.dataset.opt = o.k;
+      row.dataset.dec = o.dec;
+      row.innerHTML =
+        '<div class="optRow"><span class="optName">' + o.k + '</span>' +
+        '<input class="optNum" type="number" min="' + o.min + '" max="' + o.max +
+          '" step="' + o.step + '" placeholder="' + o.min + '…' + o.max + '"></div>' +
+        '<input class="optRange" type="range" min="' + o.min + '" max="' + o.max +
+          '" step="' + o.step + '" value="' + o.min + '">' +
+        '<div class="optHint">' + o.hint + '</div>';
+      wrap.appendChild(row);
+      const num = row.querySelector('.optNum'), rng = row.querySelector('.optRange');
+      const unset = () => row.classList.toggle('unset', num.value === '');
+      num.addEventListener('input', () => {
+        if (num.value !== '') rng.value = num.value;
+        unset(); saveState(); syncChip();
+      });
+      rng.addEventListener('input', () => {
+        num.value = (+rng.value).toFixed(o.dec);
+        unset(); saveState(); syncChip();
+      });
+    });
+    grpGen.appendChild(wrap);
+  });
+  const bw = document.createElement('div');
+  bw.className = 'grp';
+  bw.innerHTML = '<div class="grpHd"><span>开关</span></div>';
+  BOOLS.forEach(b => {
+    const r = document.createElement('div');
+    r.className = 'boolRow';
+    r.dataset.opt = b.k; r.dataset.type = 'bool';
+    r.innerHTML = '<input type="checkbox" id="b_' + b.k + '"' + (b.def ? ' checked' : '') +
+      '><label for="b_' + b.k + '">' + b.label + '</label>';
+    r.querySelector('input').addEventListener('change', () => { saveState(); syncChip(); });
+    bw.appendChild(r);
+  });
+  grpGen.appendChild(bw);
+})();
+
+/* ── 读写参数 ───────────────────────────────────────────── */
+function parseParams(str){
+  const out = {};
+  (str || '').split('\n').forEach(line => {
+    const m = line.trim().match(/^(\S+)\s+(.*)$/);
+    if (!m) return;
+    let v = m[2].trim().replace(/^"|"$/g, '');
+    if (v === 'true') v = true; else if (v === 'false') v = false;
+    else if (/^-?\d+$/.test(v)) v = parseInt(v, 10);
+    else if (/^-?\d*\.\d+$/.test(v)) v = parseFloat(v);
+    out[m[1]] = v;
+  });
+  return out;
+}
+function setOpt(k, v){
+  const row = document.querySelector('.opt[data-opt="' + k + '"]');
+  if (!row || v === undefined || v === null || typeof v === 'boolean') return false;
+  row.querySelector('.optNum').value = v;
+  row.querySelector('.optRange').value = v;
+  row.classList.remove('unset');
+  return true;
+}
+function setBool(k, v){
+  const row = document.querySelector('.boolRow[data-opt="' + k + '"]');
+  if (!row || typeof v !== 'boolean') return false;
+  row.querySelector('input').checked = v;
+  return true;
+}
+function clearAll(){
+  document.querySelectorAll('.opt').forEach(r => {
+    r.querySelector('.optNum').value = ''; r.classList.add('unset');
+  });
+  document.querySelectorAll('.boolRow').forEach(r => {
+    const d = BOOLS.find(b => b.k === r.dataset.opt);
+    r.querySelector('input').checked = d ? d.def : false;
+  });
+  $('stopSeq').value = ''; $('fmtMode').value = 'off'; $('fmtSchema').value = '';
+  updateFmtUI();
+  saveState(); syncChip();
+}
+
+async function loadModelDefaults(){
+  const sel = $('model').value;
+  if (!sel) return 0;
+  try{
+    const d = await (await fetch(API + '/api/show', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ model: sel })
+    })).json();
+    const p = parseParams(d.parameters);
+    let hit = 0;
+    SPEC.forEach(o => { if (setOpt(o.k, p[o.k])) hit++; });
+    BOOLS.forEach(b => { if (setBool(b.k, p[b.k])) hit++; });
+    const c = String(p.num_ctx || '');
+    if ($('ctx').querySelector('option[value="' + c + '"]')) $('ctx').value = c;
+    const mp = String(p.num_predict || '');
+    if ($('maxTok').querySelector('option[value="' + mp + '"]')) $('maxTok').value = mp;
+    if (Array.isArray(p.stop)) $('stopSeq').value = p.stop.join('\n');
+    renderModelInfo(d);
+    $('panelHint').textContent = '模型自带 ' + Object.keys(p).length + ' 个参数，已回填 ' + hit + ' 个';
+    saveState(); syncChip();
+    return hit;
+  } catch(e){
+    $('panelHint').textContent = '读模型参数失败：' + e.message;
+    return 0;
+  }
+}
+
+/* GGUF 各量化类型的每权重比特数。用于从 tensors 的 type+shape 反推真实体积。
+   已用实测校准：本模型算出 20.81 GB vs 实际 GGUF 20.82 GB（误差 0.0%）。 */
+const BPW = {
+  F32:32, F16:16, BF16:16, Q4_0:4.5, Q4_1:5, Q5_0:5.5, Q5_1:6, Q8_0:8.5,
+  Q2_K:2.5625, Q3_K:3.4375, Q4_K:4.5, Q5_K:5.5, Q6_K:6.5625,
+  IQ1_S:1.5625, IQ1_M:1.75, IQ2_XXS:2.0625, IQ2_XS:2.3125, IQ2_S:2.5, IQ2_M:2.7,
+  IQ3_XXS:3.0625, IQ3_XS:3.3, IQ3_S:3.44, IQ3_M:3.66, IQ4_NL:4.5, IQ4_XS:4.25,
+  TQ1_0:1.6875, TQ2_0:2.0625, MXFP4:4.25,
+};
+function tensorBytes(list){
+  let bytes = 0;
+  (list || []).forEach(t => {
+    let n = 1;
+    (t.shape || []).forEach(s => { n *= s; });
+    bytes += n * (BPW[t.type] ?? 4.5) / 8;
+  });
+  return bytes;
+}
+
+function renderModelInfo(d){
+  const mi = d.model_info || {}, det = d.details || {};
+  const find = suf => { const k = Object.keys(mi).find(x => x.endsWith(suf)); return k ? mi[k] : null; };
+  const vars = d.tensors || [];
+  const bytes = tensorBytes(vars);
+  MODEL_MI = mi; MODEL_W_GB = bytes / 1024**3;
+  const dist = {};
+  vars.forEach(t => { dist[t.type] = (dist[t.type] || 0) + 1; });
+  const distStr = Object.entries(dist).sort((a,b) => b[1]-a[1]).slice(0, 4)
+    .map(([k,v]) => k + '×' + v).join(' · ');
+  const rows = [
+    ['架构', det.family || '?'],
+    ['参数 / 量化', (det.parameter_size || '?') + ' · ' + (det.quantization_level || '?')],
+    ['权重体积', (bytes / 1024**3).toFixed(2) + ' GB / ' + vars.length + ' 张量'],
+    ['精度分布', distStr || '?'],
+    ['原生上下文', find('context_length') ? (find('context_length')/1024).toFixed(0) + 'K' : '?'],
+    ['层数 / 专家', (find('block_count') || '?') + ' 层 · ' +
+                    (find('expert_count') || '?') + ' 专家（激活 ' + (find('expert_used_count') || '?') + '）'],
+    ['注意力', 'Q ' + (find('attention.head_count') || '?') + ' 头 / KV ' +
+               (find('attention.head_count_kv') || '?') + ' 头 · 隐藏 ' + (find('embedding_length') || '?')],
+    ['能力', (d.capabilities || []).join(' · ') || '?'],
+  ];
+  $('modelInfo').innerHTML = rows.map(r =>
+    '<div class="r"><span>' + r[0] + '</span><span>' + r[1] + '</span></div>').join('');
+  updateCtxWarn();
+}
+
+/* ── 上下文 / 显存预估 ──────────────────────────────────────
+   用 model_info 精确算 KV 缓存。已实测校准：128K → 2560 MiB，
+   与 llama.cpp 日志的 "MTL0 KV buffer size = 2560.00 MiB" 完全一致。
+   关键点：混合注意力模型（本例 full_attention_interval = 4，40 层里只有 10 层
+   是完整注意力，其余走循环机制）只有那 1/N 层需要 KV 缓存。 */
+let MODEL_MI = null, MODEL_W_GB = 0;
+
+function kvMiB(ctx){
+  if (!MODEL_MI) return null;
+  const g = s => { const k = Object.keys(MODEL_MI).find(x => x.endsWith(s)); return k ? MODEL_MI[k] : null; };
+  const layers = g('block_count'), kvh = g('attention.head_count_kv'), kl = g('attention.key_length');
+  if (!layers || !kvh || !kl) return null;
+  const full = layers / (g('full_attention_interval') || 1);
+  return 2 * full * kvh * kl * ctx * 2 / 1024 / 1024;   // K+V，F16
+}
+
+/* GPU 总占用估算 = 权重 + KV + 计算缓冲与循环状态。
+   两个锚点来自 llama.cpp 实测日志：
+     32K → 22164 MiB（计算缓冲+状态 0.21 GB）
+     128K → 24380 MiB（计算缓冲+状态 0.50 GB）
+   缓冲随上下文增长，故按 ctx 线性插值。 */
+function estGpuGB(ctx){
+  const ctxK = ctx / 1024;
+  const kv = (kvMiB(ctx) || 0) / 1024;
+  const ov = 0.21 + 0.29 * Math.max(0, ctxK - 32) / 96;
+  return MODEL_W_GB + kv + ov;
+}
+
+function updateCtxWarn(){
+  const el = $('ctxWarn'), ctx = currentCtx();
+  $('ctxCustomRow').hidden = $('ctx').value !== 'custom';
+  const kv = kvMiB(ctx);
+  if (kv === null){ el.hidden = true; return; }
+  const est = estGpuGB(ctx);
+  /* 分级依据实测（本机 32GB）：32K/64K/96K/112K/128K 在轻载下都跑通过；
+     但 128K 在负载偏重时失败过一次 —— 余量耗尽，不是硬上限。
+     且失败后 Metal 后端会持续处于错误状态，必须重载模型才能恢复。 */
+  const level = est > 23.5 ? 'bad' : est > 22.5 ? 'risky' : '';
+  el.hidden = false;
+  el.className = 'ctxwarn' + (level ? ' ' + level : '');
+  el.innerHTML = Math.round(ctx / 1024) + 'K → KV 缓存约 <b>' + kv.toFixed(0) + ' MiB</b>，'
+    + '加权重 ' + MODEL_W_GB.toFixed(1) + ' GB，估算 GPU 占用 <b>' + est.toFixed(1) + ' GB</b>。'
+    + (level === 'bad'
+       ? ' 已接近上限：轻载时实测能跑通，但负载稍重就会报 Insufficient Memory，'
+       + '而且<b>失败后必须重载模型（改一次这个值）才能恢复</b>。建议留出余量。'
+       : level === 'risky'
+       ? ' 余量不太多，同时开很多应用时可能失败。'
+       : ' 在本机安全范围内。');
+}
+
+/* 把服务端错误翻译成人话。之前一律提示「确认 Ollama 在运行」，
+   遇到 GPU 显存不足这种错误时是彻底误导的。 */
+function renderError(bubble, msg, wrap){
+  let info;
+  if (/Insufficient Memory|Compute error|out of memory|OutOfMemory|kIOGPU/i.test(msg)){
+    info = { t:'GPU 显存不足 —— 不是连接问题',
+      b:'模型能加载，但解码时分配不出显存（日志特征：<code>Insufficient Memory</code> 与 '
+      + '<code>backend is in error state</code>）。多半是 num_ctx 太大、余量耗尽：'
+      + '本机 32GB，实测 32K–112K 在轻载下都能跑，128K 在负载偏重时失败过。'
+      + '<b>关键在于：一旦失败，Metal 后端会持续卡在错误状态，之后每个请求都会失败，'
+      + '必须重载模型才能恢复</b> —— 这就是你连续看到报错的原因。点下面按钮即可修复。',
+      fix:true };
+  } else if (/Failed to fetch|NetworkError|Load failed|ERR_/i.test(msg)){
+    info = { t:'连不上 Ollama',
+      b:'请确认 Ollama 在运行，并且本页面是通过 <code>http://127.0.0.1</code> 打开的'
+      + '——直接双击 HTML 会被 Ollama 的跨域策略拒绝（403）。' };
+  } else if (/not found|no such model|404/i.test(msg)){
+    info = { t:'模型不存在', b:'下拉里选的模型在 Ollama 里找不到了，重新选一个。' };
+  } else {
+    info = { t:'请求失败', b:'完整原因见 Ollama 日志：<code>~/.ollama/logs/server.log</code>。' };
+  }
+  bubble.innerHTML = '<div class="err">' + esc(info.t) + '</div>'
+    + '<div class="hint" style="margin-top:6px">' + info.b + '</div>'
+    + '<div class="hint" style="margin-top:6px; opacity:.7">原始错误：' + esc(msg.slice(0, 200)) + '</div>';
+  if (info.fix){
+    const btn = document.createElement('button');
+    btn.className = 'primary fixbtn';
+    btn.textContent = '把 num_ctx 重置为 32K 并重试';
+    btn.onclick = () => {
+      $('ctx').value = '32768';
+      saveState(); syncChip(); updateCtxWarn();
+      const last = history[history.length - 1];
+      if (last && last.role === 'user'){
+        history.pop();
+        // 连同原始的用户气泡一起移除，否则重试会多出一条重复的用户消息
+        const prev = wrap.previousElementSibling;
+        if (prev && prev.classList.contains('user')) prev.remove();
+        wrap.remove();
+        inputEl.value = last.content;
+        send();
+      }
+    };
+    bubble.appendChild(btn);
+  }
+}
+
+/* 当前生效的 num_ctx：可以是预设，也可以是自定义的任意整数（实测 40960 被引擎接受并在 /api/ps 回读一致） */
+function currentCtx(){
+  const sel = $('ctx').value;
+  if (sel !== 'custom'){
+    const v = parseInt(sel, 10);
+    if (Number.isFinite(v)) return v;
+  }
+  const n = parseInt($('ctxCustom').value, 10);
+  if (Number.isFinite(n) && n >= 512 && n <= 262144) return n;
+  return 32768;
+}
+
+function collectOptions(){
+  const o = { num_ctx: currentCtx(), num_predict: +$('maxTok').value };
+  document.querySelectorAll('.opt[data-opt]').forEach(row => {
+    const inp = row.querySelector('.optNum');
+    if (inp.value === '') return;
+    const v = parseFloat(inp.value);
+    if (Number.isNaN(v)) return;
+    o[row.dataset.opt] = row.dataset.dec === '0' ? Math.round(v) : v;
+  });
+  document.querySelectorAll('.boolRow[data-opt]').forEach(row => {
+    o[row.dataset.opt] = row.querySelector('input').checked;
+  });
+  const st = $('stopSeq').value.split('\n').map(s => s.trim()).filter(Boolean);
+  if (st.length) o.stop = st;
+  return o;
+}
+
+/* ── 结构化输出（format）─────────────────────────────────────
+   实测结论（Ollama 0.33.3）：
+     · format:"json"   → 被完全忽略，输出与不传一字不差
+     · format:{}       → 同样被忽略
+     · format:{type:'object'} 或带 constraints 的 schema → 真正生效
+   速度几乎无损（实测 30.4 vs 30.1 tok/s），但模型会失去拒答能力。 */
+function collectFormat(){
+  const m = $('fmtMode').value;
+  if (m === 'object') return { type:'object' };
+  if (m === 'array')  return { type:'array' };
+  if (m === 'custom'){
+    const raw = $('fmtSchema').value.trim();
+    if (!raw) return undefined;
+    try { return JSON.parse(raw); } catch { return undefined; }
+  }
+  return undefined;
+}
+
+function updateFmtUI(){
+  const m = $('fmtMode').value;
+  $('fmtSchema').hidden = m !== 'custom';
+  const el = $('fmtHint');
+  let msg = '', bad = false;
+
+  if (m === 'off'){
+    msg = '关闭。实测：字符串 "json" 与空 schema {} 都会被 Ollama 忽略，'
+        + '必须给出带真实约束的 schema 才生效。';
+  } else if (m === 'custom'){
+    const raw = $('fmtSchema').value.trim();
+    if (!raw){ msg = '粘贴一个 JSON Schema。留空则不发送 format。'; }
+    else {
+      try{
+        const o = JSON.parse(raw);
+        if (o && typeof o === 'object' && !Array.isArray(o) && Object.keys(o).length === 0){
+          msg = '空对象 {} 会被 Ollama 忽略 —— 至少要有 type 或 properties 才算真约束。';
+          bad = true;
+        } else { msg = 'Schema 合法。字段名、类型、enum、required 都会被强制。'; }
+      } catch(e){ msg = 'JSON 语法错误：' + e.message; bad = true; }
+    }
+  } else {
+    msg = '强制整个输出为一个 JSON ' + (m === 'object' ? '对象' : '数组') + '。';
+  }
+
+  if (m !== 'off'){
+    if ($('think').checked) $('think').checked = false;
+    msg += ' 已自动关闭「思考」——实测两者同开会把预算耗尽、content 恒为空。'
+         + '代价是模型失去拒答能力：答不出的问题会编造字段值，而不是说明原因。';
+  }
+  el.className = 'optHint' + (bad ? ' badhint' : '');
+  el.textContent = msg;
+  saveState();
+}
+
+function syncChip(){
+  const o = collectOptions(), bits = [Math.round(o.num_ctx/1024) + 'K'];
+  const LBL = { temperature:'T', top_p:'p', top_k:'k', min_p:'minP', repeat_penalty:'rep' };
+  Object.keys(LBL).forEach(k => { if (o[k] !== undefined) bits.push(LBL[k] + ' ' + o[k]); });
+  if (o.mirostat) bits.push('mirostat' + o.mirostat);
+  bits.push(o.num_predict === -1 ? '不限长' : o.num_predict + 'tok');
+  $('chip').textContent = bits.join(' · ');
+}
+
+/* ── 本地持久化 ─────────────────────────────────────────── */
+function saveState(){
+  try{
+    const s = { c:$('ctx').value, cc:$('ctxCustom').value, m:+$('maxTok').value, stop:$('stopSeq').value,
+      keep:$('keepAlive').value, fmt:$('fmtMode').value, fmtSch:$('fmtSchema').value,
+      think:$('think').checked, o:{}, b:{} };
+    document.querySelectorAll('.opt[data-opt]').forEach(r => {
+      const v = r.querySelector('.optNum').value;
+      if (v !== '') s.o[r.dataset.opt] = v;
+    });
+    document.querySelectorAll('.boolRow[data-opt]').forEach(r => {
+      s.b[r.dataset.opt] = r.querySelector('input').checked;
+    });
+    localStorage.setItem(LS_KEY, JSON.stringify(s));
+  } catch {}
+}
+function restoreState(){
+  try{
+    const s = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
+    if (!s) return false;
+    if (s.c !== undefined && s.c !== null){
+      const asStr = String(s.c);
+      if ($('ctx').querySelector('option[value="' + asStr + '"]')) $('ctx').value = asStr;
+      else { $('ctx').value = 'custom'; $('ctxCustom').value = asStr; }
+    }
+    if (s.cc) $('ctxCustom').value = s.cc;
+    if (s.m) $('maxTok').value = s.m;
+    if (s.stop) $('stopSeq').value = s.stop;
+    if (s.keep) $('keepAlive').value = s.keep;
+    if (s.fmt) $('fmtMode').value = s.fmt;
+    if (s.fmtSch) $('fmtSchema').value = s.fmtSch;
+    if (s.think !== undefined) $('think').checked = !!s.think;
+    Object.entries(s.o || {}).forEach(([k, v]) => setOpt(k, v));
+    Object.entries(s.b || {}).forEach(([k, v]) => setBool(k, v));
+    return true;
+  } catch { return false; }
+}
+
+/* ── 标签页 ─────────────────────────────────────────────── */
+document.querySelectorAll('.tab').forEach(t => {
+  t.onclick = () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x === t));
+    $('paneMon').hidden = t.dataset.tab !== 'mon';
+    $('paneOpt').hidden = t.dataset.tab !== 'opt';
+    if (t.dataset.tab === 'mon') requestAnimationFrame(drawSpark);
+  };
+});
+$('btnParams').onclick = () => document.querySelector('.tab[data-tab="opt"]').click();
+
+/* ── 测速 ───────────────────────────────────────────────── */
+const chatEl = $('chat'), inputEl = $('input'), sendBtn = $('send'), stopBtn = $('stop');
+const R = { chunks:0, stamps:[], samples:[], t0:0, tFirst:0, peak:0, cumTok:0, cumSec:0, calib:1 };
+const WIN_MS = 15000, RATE_WIN = 3500;
+let history = [], busy = false, ctrl = null;
+
+function resetRun(){
+  R.chunks = 0; R.stamps = []; R.t0 = performance.now(); R.tFirst = 0; R.samples.length = 0;
+  ['sTtft','sPre','sCache','sOut','sFinal','sLoad','sTotal'].forEach(id => $(id).textContent = '–');
+}
+function rawRate(){
+  const now = performance.now();
+  if (R.chunks < 2 || !R.tFirst) return 0;
+  const recent = R.stamps.filter(t => now - t <= RATE_WIN);
+  if (recent.length >= 6){ const s = (now - recent[0]) / 1000; return s > 0 ? recent.length / s : 0; }
+  const s = (now - R.tFirst) / 1000;
+  return s > 0 ? R.chunks / s : 0;
+}
+function tick(){
+  if (!busy){ drawSpark(); return; }
+  const rate = rawRate() * R.calib;
+  $('liveRate').innerHTML = rate.toFixed(1) + '<span class="u">tok/s</span>';
+  if (rate > R.peak){ R.peak = rate; $('sPeak').textContent = R.peak.toFixed(1) + ' tok/s'; }
+  R.samples.push({ t: performance.now(), rate });
+  const cut = performance.now() - WIN_MS;
+  while (R.samples.length && R.samples[0].t < cut) R.samples.shift();
+  drawSpark();
+}
+
+const spark = $('spark'), sctx = spark.getContext('2d');
+function drawSpark(){
+  const dpr = window.devicePixelRatio || 1;
+  const w = spark.clientWidth, h = spark.clientHeight;
+  if (!w || !h) return;
+  if (spark.width !== Math.round(w*dpr)){ spark.width = Math.round(w*dpr); spark.height = Math.round(h*dpr); }
+  sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  sctx.clearRect(0, 0, w, h);
+  const now = performance.now(), pad = 3, ih = h - pad*2;
+  sctx.strokeStyle = 'rgba(255,255,255,.07)'; sctx.lineWidth = 1;
+  [0,.5,1].forEach(f => { const y = pad + ih*f; sctx.beginPath(); sctx.moveTo(0,y); sctx.lineTo(w,y); sctx.stroke(); });
+  const pts = R.samples.filter(p => now - p.t <= WIN_MS);
+  if (pts.length < 2) return;
+  const maxR = Math.max(5, ...pts.map(p => p.rate)) * 1.15;
+  const span = now - pts[0].t;
+  const win = Math.max(3000, Math.min(WIN_MS, span));
+  const X = p => ((p.t - (now - win)) / win) * w;
+  const Y = p => pad + ih - (p.rate / maxR) * ih;
+  const grad = sctx.createLinearGradient(0, pad, 0, pad+ih);
+  grad.addColorStop(0,'rgba(151,196,89,.34)'); grad.addColorStop(1,'rgba(151,196,89,0)');
+  sctx.beginPath(); sctx.moveTo(X(pts[0]), pad+ih);
+  pts.forEach(p => sctx.lineTo(X(p), Y(p)));
+  sctx.lineTo(X(pts[pts.length-1]), pad+ih); sctx.closePath();
+  sctx.fillStyle = grad; sctx.fill();
+  sctx.beginPath();
+  pts.forEach((p,i) => i ? sctx.lineTo(X(p), Y(p)) : sctx.moveTo(X(p), Y(p)));
+  sctx.strokeStyle = '#97C459'; sctx.lineWidth = 1.8; sctx.lineJoin = 'round'; sctx.stroke();
+  const last = pts[pts.length-1];
+  sctx.beginPath(); sctx.arc(X(last), Y(last), 2.8, 0, Math.PI*2); sctx.fillStyle = '#97C459'; sctx.fill();
+}
+window.addEventListener('resize', drawSpark);
+
+/* ── 渲染 ───────────────────────────────────────────────── */
+const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function md(src){
+  const blocks = [];
+  let s = src.replace(/```[^\n]*\n?([\s\S]*?)```/g, (m, code) => {
+    blocks.push(code); return '\u0000' + (blocks.length-1) + '\u0000';
+  });
+  s = esc(s);
+  s = s.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+  s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/\u0000(\d+)\u0000/g, (m,i) => '<pre><code>' + esc(blocks[+i].replace(/\n$/,'')) + '</code></pre>');
+  return s.replace(/\n/g, '<br>');
+}
+function scrollDown(force){
+  const near = chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight < 120;
+  if (force || near) chatEl.scrollTop = chatEl.scrollHeight;
+}
+function addMsg(role, text){
+  const wrap = document.createElement('div');
+  wrap.className = 'msg ' + role;
+  wrap.innerHTML = '<div class="who">' + (role === 'user' ? '你' : 'Qwen') + '</div><div class="bubble"></div>';
+  wrap.querySelector('.bubble').innerHTML = md(text);
+  chatEl.appendChild(wrap); scrollDown(true);
+  return wrap.querySelector('.bubble');
+}
+
+/* ── 模型 / 运行位置 ────────────────────────────────────── */
+const fmtGB = b => (b / 1024**3).toFixed(1);
+
+async function refreshModels(){
+  try{
+    const d = await (await fetch(API + '/api/tags')).json();
+    const sel = $('model'), keep = sel.value;
+    const names = (d.models || []).map(m => m.name);
+    sel.innerHTML = '';
+    names.forEach(n => { const o = document.createElement('option'); o.value = o.textContent = n; sel.appendChild(o); });
+    sel.value = (keep && names.includes(keep)) ? keep
+      : (names.find(n => n.includes('35b-a3b') && !n.includes('code')) || names[0] || '');
+    $('panelHint').textContent = '共 ' + names.length + ' 个本地模型';
+  } catch {
+    $('panelHint').innerHTML = '<span style="color:var(--danger)">连不上 Ollama，请确认服务在运行</span>';
+  }
+}
+
+async function refreshPs(){
+  const el = $('sDev'), hint = $('devHint');
+  try{
+    const d = await (await fetch(API + '/api/ps')).json();
+    const m = (d.models || [])[0];
+    if (!m){
+      el.textContent = '未加载'; el.className = 'v';
+      hint.textContent = '当前无模型驻留内存（闲置会自动卸载）。发一条消息即会重新载入。';
+      return;
+    }
+    const total = m.size || 0, vram = m.size_vram || 0, ratio = total ? vram/total : 0;
+    const tag = m.name + (m.context_length ? ' · ' + Math.round(m.context_length/1024) + 'K 上下文' : '');
+    if (ratio >= 0.999){
+      el.textContent = 'GPU 全量 · ' + fmtGB(total) + ' GB'; el.className = 'v good';
+      hint.textContent = tag + ' —— 全部层都在 Metal GPU 上，本机最快的配置。';
+    } else if (ratio <= 0.001){
+      el.textContent = 'CPU 全量 · ' + fmtGB(total) + ' GB'; el.className = 'v warn';
+      hint.textContent = tag + ' —— 整模都在 CPU 上跑，会非常慢。';
+    } else {
+      el.textContent = 'GPU ' + fmtGB(vram) + ' / ' + fmtGB(total) + ' GB'; el.className = 'v warn';
+      hint.textContent = tag + ' —— 部分层落在 CPU，速度会明显下降。';
+    }
+  } catch {
+    el.textContent = '—'; el.className = 'v'; hint.textContent = '读不到 Ollama 状态。';
+  }
+}
+
+/* ── 发送 ───────────────────────────────────────────────── */
+async function send(){
+  const text = inputEl.value.trim();
+  if (!text || busy) return;
+  inputEl.value = ''; autoGrow();
+  history.push({ role:'user', content:text });
+  addMsg('user', text);
+
+  busy = true; sendBtn.disabled = true; stopBtn.disabled = false;
+  $('composerMeta').textContent = '生成中…';
+  $('liveSub').textContent = '正在预填充提示词…';
+  $('liveRate').innerHTML = '–<span class="u">tok/s</span>';
+  resetRun();
+  ctrl = new AbortController();
+
+  const wrap = document.createElement('div');
+  wrap.className = 'msg assistant';
+  wrap.innerHTML = '<div class="who">Qwen</div><div class="bubble"><span class="caret"></span></div>';
+  chatEl.appendChild(wrap);
+  const bubble = wrap.querySelector('.bubble');
+  scrollDown(true);
+
+  const payload = {
+    model: $('model').value,
+    messages: history,
+    stream: true,
+    think: $('think').checked,
+    keep_alive: $('keepAlive').value,
+    options: collectOptions(),
+  };
+  const fmt = collectFormat();
+  if (fmt !== undefined) payload.format = fmt;
+
+  let body = '', think = '', dirty = false;
+  const timer = setInterval(tick, 200);
+  const painter = setInterval(() => {
+    if (!dirty) return; dirty = false;
+    let html = '';
+    if (think) html += '<div class="thinkbox"><b>思考</b>' + esc(think) + '</div>';
+    bubble.innerHTML = html + md(body) + '<span class="caret"></span>';
+    scrollDown(false);
+  }, 90);
+
+  try{
+    const res = await fetch(API + '/api/chat', {
+      method:'POST', signal: ctrl.signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status + ' — ' + (await res.text()).slice(0,200));
+
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = '';
+    while (true){
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream:true });
+      const lines = buf.split('\n'); buf = lines.pop();
+      for (const line of lines){
+        if (!line.trim()) continue;
+        let j; try { j = JSON.parse(line); } catch { continue; }
+        if (j.error) throw new Error(j.error);
+        const m = j.message || {}, piece = m.content || '', tp = m.thinking || '';
+        if (piece || tp){
+          if (!R.tFirst){
+            R.tFirst = performance.now();
+            $('sTtft').textContent = ((R.tFirst - R.t0)/1000).toFixed(2) + ' s';
+            $('liveSub').textContent = '生成中';
+          }
+          if (tp) think += tp;
+          if (piece) body += piece;
+          R.chunks++; R.stamps.push(performance.now()); dirty = true;
+        }
+        if (j.done) finish(j, body, think, bubble);
+      }
+    }
+  } catch (e){
+    if (e.name === 'AbortError'){
+      let h = '';
+      if (think) h += '<div class="thinkbox"><b>思考</b>' + esc(think) + '</div>';
+      bubble.innerHTML = (body || think)
+        ? h + md(body) + '<div class="hint" style="margin-top:7px">（已手动停止）</div>'
+        : '<span class="hint">已停止</span>';
+    } else {
+      renderError(bubble, String(e.message), wrap);
+    }
+  } finally {
+    clearInterval(timer); clearInterval(painter);
+    busy = false; sendBtn.disabled = false; stopBtn.disabled = true; ctrl = null;
+    $('composerMeta').textContent = '就绪';
+    inputEl.focus(); drawSpark(); refreshPs();
+  }
+}
+
+function finish(j, body, think, bubble){
+  if (body || think){
+    history.push({ role:'assistant', content: body || '' });
+    let h = '';
+    if (think) h += '<div class="thinkbox"><b>思考</b>' + esc(think) + '</div>';
+    bubble.innerHTML = h + md(body);
+  }
+  const ns = v => (v || 0) / 1e9;
+  const ec = j.eval_count || 0, ed = ns(j.eval_duration);
+  const pc = j.prompt_eval_count || 0, pd = ns(j.prompt_eval_duration);
+  const cc = j.prompt_eval_cached_count || 0, ld = ns(j.load_duration);
+
+  if (pc && pd) $('sPre').textContent = (pc/pd).toFixed(1) + ' tok/s';
+  if (cc > 0){
+    const tot = pc + cc;
+    $('sCache').textContent = cc.toLocaleString() + ' / ' + tot.toLocaleString() + '（' + Math.round(cc/tot*100) + '%）';
+    $('sCache').className = 'v mono good';
+  } else if (pc > 0){
+    $('sCache').textContent = '0 → 全量重算'; $('sCache').className = 'v mono warn';
+  }
+  $('sLoad').className = ld > 1 ? 'v mono warn' : 'v mono good';
+  $('sLoad').textContent = ld > 1 ? ld.toFixed(1) + ' s 重载' : '已驻留';
+  if (ec) $('sOut').textContent = ec;
+  if (ec && ed){
+    const real = ec / ed;
+    $('sFinal').textContent = real.toFixed(1) + ' tok/s';
+    $('liveRate').innerHTML = real.toFixed(1) + '<span class="u">tok/s</span>';
+    $('liveSub').textContent = '本轮完成 · ' + ec + ' token';
+    R.cumTok += ec; R.cumSec += ed;
+    $('sCum').textContent = R.cumTok.toLocaleString();
+    $('sAvg').textContent = (R.cumTok / R.cumSec).toFixed(1) + ' tok/s';
+    if (real > R.peak){ R.peak = real; $('sPeak').textContent = real.toFixed(1) + ' tok/s'; }
+    if (R.chunks > 0) R.calib = R.calib * 0.5 + (ec / R.chunks) * 0.5;
+  }
+  $('sTotal').textContent = ns(j.total_duration).toFixed(1) + ' s';
+}
+
+/* ── 初始化 ─────────────────────────────────────────────── */
+function autoGrow(){ inputEl.style.height = 'auto'; inputEl.style.height = Math.min(180, inputEl.scrollHeight) + 'px'; }
+
+async function boot(){
+  await refreshModels();
+  restoreState();
+  updateFmtUI();
+  await loadModelDefaults();
+  syncChip();
+  await refreshPs();
+}
+
+inputEl.addEventListener('input', autoGrow);
+inputEl.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); send(); }
+});
+sendBtn.onclick = send;
+stopBtn.onclick = () => ctrl && ctrl.abort();
+$('clear').onclick = () => { if (busy) return; history = []; chatEl.innerHTML = ''; };
+$('model').addEventListener('change', async () => { await loadModelDefaults(); syncChip(); });
+$('btnLoadDef').onclick = () => loadModelDefaults();
+$('btnClearDef').onclick = clearAll;
+$('btnSavePreset').onclick = () => {
+  saveState();
+  $('optHint').innerHTML = '<span style="color:var(--accent)">已保存到浏览器本地存储，下次打开自动恢复。</span>';
+};
+['ctx','maxTok','keepAlive','fmtMode','think'].forEach(id =>
+  $(id).addEventListener('change', () => { saveState(); syncChip(); updateCtxWarn(); updateFmtUI(); }));
+$('fmtSchema').addEventListener('input', () => { saveState(); updateFmtUI(); });
+$('ctxCustom').addEventListener('input', () => { saveState(); syncChip(); updateCtxWarn(); });
+$('stopSeq').addEventListener('input', saveState);
+
+boot();
+drawSpark();
+setInterval(refreshPs, 5000);
+</script>
+</body>
+</html>
